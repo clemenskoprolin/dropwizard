@@ -11,11 +11,13 @@ hypothesis and is evaluated pass/fail by the `run-edge-cases` subcommand of the
 
 A case **passes** if all of the following hold after conversion:
 
-1. The j2k binary exits with code 0.
+1. The headless IntelliJ J2K runner exits with code 0.
 2. The output `.kt` file is non-empty and does not start with `// CONVERSION FAILED`.
 3. The output contains zero `!!` operators.
 
 A case **fails** if any criterion is not met; the evaluator records the specific reason.
+Unsafe casts are recorded as quality notes but do not currently fail a case by
+themselves.
 
 ## Hypothesis table
 
@@ -32,19 +34,25 @@ A case **fails** if any criterion is not met; the evaluator records the specific
 
 ## Results
 
-> _Populated by CI on first successful run. Re-run the workflow and download
-> `artifacts/reports/edge-cases-result.json` for up-to-date per-case results._
+Current headless-runner result: **5 / 8 cases passed**. All eight Java files
+converted successfully; the three failing cases failed only because generated
+Kotlin contained `!!`.
 
-| ID | Result | Failure note |
-|---|---|---|
-| `ec-01` | _pending_ | — |
-| `ec-02` | _pending_ | — |
-| `ec-03` | _pending_ | — |
-| `ec-04` | _pending_ | — |
-| `ec-05` | _pending_ | — |
-| `ec-06` | _pending_ | — |
-| `ec-07` | _pending_ | — |
-| `ec-08` | _pending_ | — |
+| ID | Result | Unsafe calls | Unsafe casts | Failure note |
+|---|---|---:|---:|---|
+| `ec-01` | fail | 1 | 0 | 1 unsafe-call(s) (`!!`) in output |
+| `ec-02` | fail | 1 | 0 | 1 unsafe-call(s) (`!!`) in output |
+| `ec-03` | pass | 0 | 3 | 3 unsafe cast(s) (`as T`) in output |
+| `ec-04` | pass | 0 | 0 | — |
+| `ec-05` | pass | 0 | 1 | 1 unsafe cast(s) (`as T`) in output |
+| `ec-06` | pass | 0 | 1 | 1 unsafe cast(s) (`as T`) in output |
+| `ec-07` | fail | 1 | 0 | 1 unsafe-call(s) (`!!`) in output |
+| `ec-08` | pass | 0 | 0 | — |
+
+The 2026-05-02 Actions artifact contained seven rows because the initial
+hypothesis parser treated braces inside the `ec-03` hypothesis text as JSON
+object delimiters. The parser now scans strings and escapes correctly, and the
+local validation run covers all eight cases.
 
 ## Proposed remedies (v1 notes)
 

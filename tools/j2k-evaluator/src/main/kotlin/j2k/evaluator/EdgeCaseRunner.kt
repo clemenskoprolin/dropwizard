@@ -139,10 +139,8 @@ class EdgeCaseRunner(private val opts: Map<String, String>) {
     private fun loadHypotheses(file: Path): List<EdgeCaseHypothesis> {
         check(file.exists()) { "Hypotheses file not found: $file" }
         val text = file.readText()
-        return Regex("""\{[^{}]+\}""", setOf(RegexOption.DOT_MATCHES_ALL))
-            .findAll(text)
-            .map { m ->
-                val obj = m.value
+        return jsonObjects(text)
+            .map { obj ->
                 EdgeCaseHypothesis(
                     id             = jsonStr(obj, "id"),
                     file           = jsonStr(obj, "file"),
@@ -153,6 +151,36 @@ class EdgeCaseRunner(private val opts: Map<String, String>) {
             }
             .filter { it.id.isNotBlank() }
             .toList()
+    }
+
+    private fun jsonObjects(text: String): List<String> {
+        val objects = mutableListOf<String>()
+        var start = -1
+        var depth = 0
+        var inString = false
+        var escaped = false
+
+        for (i in text.indices) {
+            val c = text[i]
+            when {
+                escaped -> escaped = false
+                c == '\\' && inString -> escaped = true
+                c == '"' -> inString = !inString
+                !inString && c == '{' -> {
+                    if (depth == 0) start = i
+                    depth++
+                }
+                !inString && c == '}' -> {
+                    depth--
+                    if (depth == 0 && start >= 0) {
+                        objects += text.substring(start, i + 1)
+                        start = -1
+                    }
+                }
+            }
+        }
+
+        return objects
     }
 
     private fun jsonStr(obj: String, key: String): String =

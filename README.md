@@ -7,37 +7,40 @@ Dropwizard — J2K Evaluation Fork
 >
 > - Workflow: [`.github/workflows/j2k-evaluate.yml`](.github/workflows/j2k-evaluate.yml)
 > - Evaluator tool: [`tools/j2k-evaluator/`](tools/j2k-evaluator/)
+> - Headless J2K runner: [`tools/headless-j2k-runner/`](tools/headless-j2k-runner/)
 > - Edge-case dataset: [`benchmarks/edge-cases/`](benchmarks/edge-cases/)
 > - Findings: [`docs/summary.md`](docs/summary.md) · [`docs/edge-cases.md`](docs/edge-cases.md)
+
 ## J2K Evaluation — Local Reproduction
 
-Prerequisites: JDK 17, Maven 3.9+ (or use `./mvnw`), `git`, internet access.
+The workflow does not use a standalone `j2k` binary. Conversion is run through a
+small IntelliJ Platform plugin that starts IDEA Community headlessly and calls
+the bundled Kotlin J2K APIs.
+
+Prerequisites: JDK 21, Maven 3.9+ (or use `./mvnw`), Gradle 8.13+, `git`, and
+internet access for Maven, Gradle, IntelliJ Platform, and Petclinic benchmark
+downloads.
 
 ```bash
 # 1. Confirm the upstream example module still builds
 ./mvnw -pl dropwizard-example -am test
 
-# 2. Build the evaluator (standalone — not part of the upstream reactor)
-./mvnw -f tools/j2k-evaluator/pom.xml package
+# 2. Build the headless IntelliJ J2K runner plugin
+gradle -p tools/headless-j2k-runner buildPlugin --no-daemon
 
-# 3. Download kotlinc 2.1.20 and locate the j2k binary
-KT_VERSION=2.1.20
-curl -fsSL "https://github.com/JetBrains/kotlin/releases/download/v${KT_VERSION}/kotlin-compiler-${KT_VERSION}.zip" \
-     -o /tmp/kotlinc.zip
-unzip -q /tmp/kotlinc.zip -d /tmp/kotlinc-dist
-J2K_BIN=$(find /tmp/kotlinc-dist -name 'j2k' -type f | head -1)
+# 3. Build the evaluator (standalone — not part of the upstream reactor)
+./mvnw -f tools/j2k-evaluator/pom.xml package
 
 # 4. Prepare the example module's dependency classpath
 ./mvnw -pl dropwizard-example -am dependency:build-classpath \
   -Dmdep.outputFile=dropwizard-example/target/classpath.txt -q
-EXAMPLE_CP=$(cat dropwizard-example/target/classpath.txt)
 
 # 5. Convert dropwizard-example sources
 java -jar tools/j2k-evaluator/target/j2k-evaluator.jar convert-primary \
   --source dropwizard-example/src \
   --output artifacts/converted/dropwizard-example \
-  --j2k-bin "${J2K_BIN}" \
-  --classpath "${EXAMPLE_CP}"
+  --headless-runner-dir tools/headless-j2k-runner \
+  --classpath-file dropwizard-example/target/classpath.txt
 
 # 6. Evaluate the converted sources
 java -jar tools/j2k-evaluator/target/j2k-evaluator.jar evaluate-primary \
@@ -47,13 +50,13 @@ java -jar tools/j2k-evaluator/target/j2k-evaluator.jar evaluate-primary \
 
 # 7. (Optional) Run the Petclinic secondary benchmark
 java -jar tools/j2k-evaluator/target/j2k-evaluator.jar compare-petclinic \
-  --j2k-bin "${J2K_BIN}" \
+  --headless-runner-dir tools/headless-j2k-runner \
   --output artifacts/reports
 
 # 8. (Optional) Run the edge-case dataset
 java -jar tools/j2k-evaluator/target/j2k-evaluator.jar run-edge-cases \
   --dataset benchmarks/edge-cases \
-  --j2k-bin "${J2K_BIN}" \
+  --headless-runner-dir tools/headless-j2k-runner \
   --output artifacts/reports
 
 # Reports land in artifacts/reports/
@@ -62,8 +65,8 @@ java -jar tools/j2k-evaluator/target/j2k-evaluator.jar run-edge-cases \
 #   edge-cases-result.json edge-cases-summary.md
 ```
 
-All evaluation logic is in Kotlin; only the `git clone` and `j2k` binary invocations
-are shell operations.
+All evaluation logic is in Kotlin. The evaluator shells out only to Gradle for
+the headless IntelliJ runner and to `git clone` for secondary benchmark inputs.
 
 ---
 

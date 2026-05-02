@@ -1,5 +1,13 @@
 # Dropwizard documentation
 
+## J2K evaluation notes
+
+This fork also contains a Java-to-Kotlin conversion evaluation harness:
+
+- [J2K evaluation summary](summary.md)
+- [J2K edge-case dataset](edge-cases.md)
+- [Headless IntelliJ runner](../tools/headless-j2k-runner/)
+
 ## Building locally
 
 Create and enter the Python virtual environment:
