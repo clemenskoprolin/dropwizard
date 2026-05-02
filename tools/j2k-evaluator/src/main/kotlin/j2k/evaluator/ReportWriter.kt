@@ -217,7 +217,7 @@ object ReportWriter {
             |---|---|---|---|---|---|
             $rows
 
-            _Generated at $timestamp_
+            _Generated at ${timestamp}_
         """.trimIndent()
     }
 
