@@ -114,7 +114,7 @@ jobs:
         run: |
           STUBS=$(grep -rl "^// STUB" artifacts/converted/ 2>/dev/null | wc -l)
           if [ "$STUBS" -gt 0 ]; then
-            echo "::error::Found $STUBS stub .kt file(s) — real conversion must have run"
+            echo "::error::Found $STUBS stub .kt file(s); conversion failed"
             grep -rl "^// STUB" artifacts/converted/
             exit 1
           fi
@@ -131,8 +131,10 @@ jobs:
       - name: Write step summary
         if: always()
         run: |
-          echo "## J2K Evaluation — run \`${{ github.run_id }}\` (headless-j2k)" \
-            >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## J2K Evaluation"
+            echo "Run: \`${{ github.run_id }}\` (headless-j2k)"
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           SUMMARY_FILE="artifacts/reports/primary-summary.md"
