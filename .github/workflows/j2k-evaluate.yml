@@ -52,13 +52,12 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
         with:
+          gradle-version: '8.13'
           cache-read-only: false
 
       - name: Build headless J2K runner plugin
         run: |
-          cd "${HEADLESS_RUNNER_DIR}"
-          chmod +x gradlew
-          ./gradlew buildPlugin --no-daemon
+          gradle -p "${HEADLESS_RUNNER_DIR}" buildPlugin --no-daemon
           echo "Headless J2K runner plugin built successfully"
 
       # Install all modules to the local Maven cache first so that inter-module

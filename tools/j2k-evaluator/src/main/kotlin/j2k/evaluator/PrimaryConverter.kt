@@ -19,7 +19,7 @@ class PrimaryConverter(private val opts: Map<String, String>) {
 
         check(headlessRunnerDir.isNotBlank() || j2kBin.isNotBlank()) {
             "convert-primary requires --headless-runner-dir or --j2k-bin; neither was supplied. " +
-            "Build tools/headless-j2k-runner first: ./gradlew -p tools/headless-j2k-runner buildPlugin"
+            "Build tools/headless-j2k-runner first: gradle -p tools/headless-j2k-runner buildPlugin"
         }
 
         val javaFiles = findByExtension(sourceDir, "java")
