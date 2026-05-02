@@ -1,5 +1,74 @@
-Dropwizard
-==========
+Dropwizard — J2K Evaluation Fork
+=================================
+
+> **This is a research fork.** The upstream Dropwizard source is unchanged. A
+> JetBrains J2K evaluation toolchain has been added to measure the quality of
+> automated Java→Kotlin conversion on `dropwizard-example`.
+>
+> - Workflow: [`.github/workflows/j2k-evaluate.yml`](.github/workflows/j2k-evaluate.yml)
+> - Evaluator tool: [`tools/j2k-evaluator/`](tools/j2k-evaluator/)
+> - Edge-case dataset: [`benchmarks/edge-cases/`](benchmarks/edge-cases/)
+> - Findings: [`docs/summary.md`](docs/summary.md) · [`docs/edge-cases.md`](docs/edge-cases.md)
+## J2K Evaluation — Local Reproduction
+
+Prerequisites: JDK 17, Maven 3.9+ (or use `./mvnw`), `git`, internet access.
+
+```bash
+# 1. Confirm the upstream example module still builds
+./mvnw -pl dropwizard-example -am test
+
+# 2. Build the evaluator (standalone — not part of the upstream reactor)
+./mvnw -f tools/j2k-evaluator/pom.xml package
+
+# 3. Download kotlinc 2.1.20 and locate the j2k binary
+KT_VERSION=2.1.20
+curl -fsSL "https://github.com/JetBrains/kotlin/releases/download/v${KT_VERSION}/kotlin-compiler-${KT_VERSION}.zip" \
+     -o /tmp/kotlinc.zip
+unzip -q /tmp/kotlinc.zip -d /tmp/kotlinc-dist
+J2K_BIN=$(find /tmp/kotlinc-dist -name 'j2k' -type f | head -1)
+
+# 4. Prepare the example module's dependency classpath
+./mvnw -pl dropwizard-example -am dependency:build-classpath \
+  -Dmdep.outputFile=dropwizard-example/target/classpath.txt -q
+EXAMPLE_CP=$(cat dropwizard-example/target/classpath.txt)
+
+# 5. Convert dropwizard-example sources
+java -jar tools/j2k-evaluator/target/j2k-evaluator.jar convert-primary \
+  --source dropwizard-example/src \
+  --output artifacts/converted/dropwizard-example \
+  --j2k-bin "${J2K_BIN}" \
+  --classpath "${EXAMPLE_CP}"
+
+# 6. Evaluate the converted sources
+java -jar tools/j2k-evaluator/target/j2k-evaluator.jar evaluate-primary \
+  --source dropwizard-example/src \
+  --converted artifacts/converted/dropwizard-example \
+  --output artifacts/reports
+
+# 7. (Optional) Run the Petclinic secondary benchmark
+java -jar tools/j2k-evaluator/target/j2k-evaluator.jar compare-petclinic \
+  --j2k-bin "${J2K_BIN}" \
+  --output artifacts/reports
+
+# 8. (Optional) Run the edge-case dataset
+java -jar tools/j2k-evaluator/target/j2k-evaluator.jar run-edge-cases \
+  --dataset benchmarks/edge-cases \
+  --j2k-bin "${J2K_BIN}" \
+  --output artifacts/reports
+
+# Reports land in artifacts/reports/
+#   primary-result.json    primary-summary.md
+#   petclinic-result.json  petclinic-summary.md
+#   edge-cases-result.json edge-cases-summary.md
+```
+
+All evaluation logic is in Kotlin; only the `git clone` and `j2k` binary invocations
+are shell operations.
+
+---
+
+## Upstream Dropwizard
+
 [![Build](https://github.com/dropwizard/dropwizard/workflows/Java%20CI/badge.svg)](https://github.com/dropwizard/dropwizard/actions?query=workflow%3A%22Java+CI%22)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=dropwizard_dropwizard&metric=alert_status)](https://sonarcloud.io/dashboard?id=dropwizard_dropwizard)
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/io.dropwizard/dropwizard-core/badge.svg)](https://maven-badges.herokuapp.com/maven-central/io.dropwizard/dropwizard-core/)

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "ec-01",
+    "file": "01_NestedAnonymousClass.java",
+    "category": "nested-anonymous-classes",
+    "hypothesis": "J2K converts Runnable/Comparator anonymous classes to lambdas or object expressions, but may emit !! when the enclosing field is captured, and deeply nested anonymous classes (inner of anonymous) will produce object expressions rather than lambdas.",
+    "expectedIssues": ["incorrect this-reference capture", "!! on captured enclosing field", "nested anonymous not folded to lambda"]
+  },
+  {
+    "id": "ec-02",
+    "file": "02_WildcardCapture.java",
+    "category": "wildcard-generics",
+    "hypothesis": "List<? extends T> becomes List<out T> and List<? super T> becomes List<in T> for one level, but deep nesting (List<? extends List<? super T>>) collapses to star-projected List<*>, and the capture-helper reverseHelper becomes unreachable dead code or an internal fun.",
+    "expectedIssues": ["star projection instead of nested variance", "capture-helper converted to dead code", "unsafe cast in deep generic context"]
+  },
+  {
+    "id": "ec-03",
+    "file": "03_SamOverload.java",
+    "category": "sam-overload",
+    "hypothesis": "Kotlin SAM conversion handles java.util.function types transparently, so the call sites in demo() will drop the explicit (Runnable) and (Supplier<String>) casts and become unresolved overload ambiguities. J2K may not insert the required SAM constructor syntax (Runnable { ... }) needed to re-disambiguate.",
+    "expectedIssues": ["overload ambiguity at call site", "missing SAM constructor syntax", "explicit cast dropped incorrectly"]
+  },
+  {
+    "id": "ec-04",
+    "file": "04_CheckedExceptionStream.java",
+    "category": "checked-exception-streams",
+    "hypothesis": "J2K retains the try-catch wrapper inside stream lambda bodies rather than hoisting it. The ThrowingFunction @FunctionalInterface becomes a Kotlin fun interface, but the wrap() helper may be converted with a redundant check for RuntimeException that is already covered by Kotlin's unchecked exception model.",
+    "expectedIssues": ["try-catch not hoisted from lambda", "redundant RuntimeException check", "UncheckedIOException pattern not simplified"]
+  },
+  {
+    "id": "ec-05",
+    "file": "05_SpringMvcAnnotation.java",
+    "category": "composed-annotations",
+    "hypothesis": "Kotlin annotation classes do not support @Target with mixed TYPE and METHOD in a single declaration. J2K may split them correctly, but the @Repeatable pattern requires a companion @JvmRepeatable annotation that J2K does not add, and composed @SpringMvcAnnotation meta-annotations may lose their defaults.",
+    "expectedIssues": ["@JvmRepeatable missing", "composed annotation defaults dropped", "@Target mapping incorrect for Kotlin AnnotationTarget"]
+  },
+  {
+    "id": "ec-06",
+    "file": "06_JacksonConstructor.java",
+    "category": "jackson-constructor",
+    "hypothesis": "J2K converts the class to a Kotlin class with @JsonCreator constructor but does not convert it to a data class due to the non-trivial constructor body. The Optional<String> return type of getDescription() will not be simplified to String? and @JsonIgnore on isAdult() may be placed on the backing field rather than the getter, breaking Jackson visibility.",
+    "expectedIssues": ["not converted to data class", "Optional not simplified to nullable", "@JsonIgnore misplaced on field instead of getter", "convenience constructor kept as secondary rather than default params"]
+  },
+  {
+    "id": "ec-07",
+    "file": "07_InnerClassShadowing.java",
+    "category": "inner-class-shadowing",
+    "hypothesis": "Single-level enclosing field access (InnerClassShadowing.this.value) becomes this@InnerClassShadowing.value correctly. However the two-level InnerInner case (Inner.this.value) may be converted incorrectly or produce !! because J2K does not always track the intermediate outer reference through two nesting levels.",
+    "expectedIssues": ["two-level outer-this access produces !!", "InnerInner.getAll() misresolves intermediate enclosing reference"]
+  },
+  {
+    "id": "ec-08",
+    "file": "08_BuilderFluent.java",
+    "category": "builder-fluent",
+    "hypothesis": "J2K recognises the return-this pattern in Builder and converts setters to functions returning Builder (or this@Builder). The covariant SecureBuilder.tls() override that returns SecureBuilder will not be recognised as a covariant override and J2K will retain an explicit cast or produce a type mismatch, requiring manual correction.",
+    "expectedIssues": ["fluent return-this not recognised", "covariant return type in SecureBuilder breaks after conversion", "explicit cast added for covariant builder chain"]
+  }
+]

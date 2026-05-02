@@ -1,0 +1,141 @@
+name: J2K Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      runSecondaryBenchmark:
+        description: 'Run Petclinic secondary benchmark'
+        required: false
+        default: 'true'
+        type: boolean
+      runEdgeCases:
+        description: 'Run custom edge-case dataset'
+        required: false
+        default: 'true'
+        type: boolean
+  push:
+    paths:
+      - '.github/workflows/j2k-evaluate.yml'
+      - 'tools/j2k-evaluator/**'
+      - 'benchmarks/**'
+      - 'docs/**'
+  pull_request:
+    paths:
+      - '.github/workflows/j2k-evaluate.yml'
+      - 'tools/j2k-evaluator/**'
+      - 'benchmarks/**'
+      - 'docs/**'
+
+env:
+  KOTLIN_VERSION: '2.1.20'
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Temurin JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: Download kotlinc and locate j2k binary
+        run: |
+          DOWNLOAD_URL="https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip"
+          echo "Downloading kotlinc ${KOTLIN_VERSION}"
+          curl -fsSL "$DOWNLOAD_URL" -o /tmp/kotlinc.zip
+          unzip -q /tmp/kotlinc.zip -d /tmp/kotlinc-dist
+
+          KOTLINC_BIN="$(find /tmp/kotlinc-dist -type f -name 'kotlinc' | head -1 | xargs dirname)"
+          echo "$KOTLINC_BIN" >> "$GITHUB_PATH"
+
+          J2K_BIN="${KOTLINC_BIN}/j2k"
+          if [ -f "$J2K_BIN" ]; then
+            chmod +x "$J2K_BIN"
+            echo "J2K_BIN=${J2K_BIN}" >> "$GITHUB_ENV"
+            echo "j2k binary found at ${J2K_BIN}"
+          else
+            echo "::warning::j2k binary not found at ${J2K_BIN}; conversion will run in stub mode"
+            echo "J2K_BIN=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Validate dropwizard-example baseline build
+        run: ./mvnw -pl dropwizard-example -am test -q -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Prepare dropwizard-example dependency classpath
+        run: |
+          ./mvnw -pl dropwizard-example -am dependency:build-classpath \
+            -Dmdep.outputFile="$GITHUB_WORKSPACE/dropwizard-example/target/classpath.txt" -q
+          echo "EXAMPLE_CLASSPATH=$(cat dropwizard-example/target/classpath.txt)" >> "$GITHUB_ENV"
+
+      - name: Build j2k-evaluator tool
+        run: ./mvnw -f tools/j2k-evaluator/pom.xml package -q
+
+      - name: Convert dropwizard-example sources (primary)
+        run: |
+          java -jar tools/j2k-evaluator/target/j2k-evaluator.jar convert-primary \
+            --source dropwizard-example/src \
+            --output artifacts/converted/dropwizard-example \
+            --j2k-bin "${J2K_BIN}" \
+            --classpath "${EXAMPLE_CLASSPATH}"
+
+      - name: Evaluate converted primary sources
+        run: |
+          java -jar tools/j2k-evaluator/target/j2k-evaluator.jar evaluate-primary \
+            --source dropwizard-example/src \
+            --converted artifacts/converted/dropwizard-example \
+            --output artifacts/reports
+
+      - name: Run Petclinic secondary benchmark
+        if: ${{ inputs.runSecondaryBenchmark != false }}
+        run: |
+          java -jar tools/j2k-evaluator/target/j2k-evaluator.jar compare-petclinic \
+            --j2k-bin "${J2K_BIN}" \
+            --output artifacts/reports
+
+      - name: Run edge-case dataset
+        if: ${{ inputs.runEdgeCases != false }}
+        run: |
+          java -jar tools/j2k-evaluator/target/j2k-evaluator.jar run-edge-cases \
+            --dataset benchmarks/edge-cases \
+            --j2k-bin "${J2K_BIN}" \
+            --output artifacts/reports
+
+      - name: Upload evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: j2k-evaluation-${{ github.run_id }}
+          path: artifacts/
+          retention-days: 30
+
+      - name: Write step summary
+        if: always()
+        run: |
+          echo "## J2K Evaluation — run \`${{ github.run_id }}\` (kotlinc ${KOTLIN_VERSION})" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          SUMMARY_FILE="artifacts/reports/primary-summary.md"
+          if [ -f "$SUMMARY_FILE" ]; then
+            cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_Primary evaluation report not generated_" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          PETCLINIC_FILE="artifacts/reports/petclinic-summary.md"
+          if [ -f "$PETCLINIC_FILE" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            cat "$PETCLINIC_FILE" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          EDGE_FILE="artifacts/reports/edge-cases-summary.md"
+          if [ -f "$EDGE_FILE" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            cat "$EDGE_FILE" >> "$GITHUB_STEP_SUMMARY"
+          fi

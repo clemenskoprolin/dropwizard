@@ -28,3 +28,12 @@ logs
 .DS_Store
 
 out/jreleaser/
+
+# J2K evaluation — generated artifacts (committed reports live in docs/, not here)
+artifacts/converted/
+artifacts/reports/*.json
+/tmp/petclinic-work*/
+/tmp/j2k-*/
+/tmp/ec-*/
+/tmp/kotlinc-dist/
+/tmp/kotlinc.zip
