@@ -82,10 +82,10 @@ jobs:
 
       - name: Prepare dropwizard-example dependency classpath
         run: |
+          OUT="${GITHUB_WORKSPACE}/dropwizard-example/target/classpath.txt"
           ./mvnw -pl dropwizard-example dependency:build-classpath \
-            -Dmdep.outputFile="dropwizard-example/target/classpath.txt" -q
-          CP="$(cat dropwizard-example/target/classpath.txt)"
-          echo "EXAMPLE_CLASSPATH=${CP}" >> "$GITHUB_ENV"
+            -Dmdep.outputFile="${OUT}" -q
+          echo "EXAMPLE_CLASSPATH=$(cat "${OUT}")" >> "$GITHUB_ENV"
 
       - name: Build j2k-evaluator tool
         run: ./mvnw -f tools/j2k-evaluator/pom.xml package -q
