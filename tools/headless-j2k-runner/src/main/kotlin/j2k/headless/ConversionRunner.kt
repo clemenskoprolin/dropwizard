@@ -7,6 +7,7 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.module.ModuleType
+import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.intellij.openapi.roots.ModuleRootManager
@@ -79,12 +80,8 @@ class ConversionRunner(private val args: CliArgs) {
         val tempDir = Files.createTempDirectory("j2k-headless-project")
         // Mark as .idea-less lightweight project.
         val project = ProjectManagerEx.getInstanceEx().openProject(
-            projectStoreBaseDir = tempDir,
-            openProjectTask = OpenProjectTask(
-                isNewProject     = true,
-                runConfigurators = false,
-                projectName      = "j2k-headless",
-            )
+            tempDir,
+            OpenProjectTask(isNewProject = true).withProjectName("j2k-headless")
         ) ?: error("ProjectManagerEx failed to create headless project")
 
         return project
@@ -149,15 +146,21 @@ class ConversionRunner(private val args: CliArgs) {
 
         // Use the new J2K (NJ2K) converter.  The API is internal and pinned to the
         // IDEA version declared in build.gradle.kts.
-        val extension = J2kConverterExtension.extension(useNewJ2k = true)
-        val converter = extension.createConverter(ConverterSettings.defaultSettings, project, module)
+        val extension = J2kConverterExtension.extension(J2kConverterExtension.Kind.K1_NEW)
+        val converter = extension.createJavaToKotlinConverter(project, module, ConverterSettings.defaultSettings)
         val postProcessor = extension.createPostProcessor(formatCode = false)
 
         // filesToKotlin must run outside any read action to avoid invokeAndWait deadlock
         // (NJ2K post-processing internally calls invokeAndWait; if we hold a read lock the
         // EDT can't proceed to run those write actions).
         val filesResult = try {
-            converter.filesToKotlin(psiFiles, postProcessor)
+            converter.filesToKotlin(
+                psiFiles,
+                postProcessor,
+                EmptyProgressIndicator(),
+                emptyList(),
+                emptyList(),
+            )
         } catch (e: Exception) {
             System.err.println("j2k-headless: filesToKotlin threw: ${e.message}")
             e.printStackTrace(System.err)
@@ -167,14 +170,13 @@ class ConversionRunner(private val args: CliArgs) {
         var converted = 0
         var failed    = 0
 
-        for ((psiFile, elementResult) in psiFiles.zip(filesResult.results)) {
+        for ((psiFile, ktText) in psiFiles.zip(filesResult.results)) {
             val sourcePath = Paths.get(psiFile.virtualFile.path)
             val relative   = try { sourceRoot.relativize(sourcePath) } catch (_: IllegalArgumentException) { sourcePath.fileName }
             val destDir    = outputRoot.resolve(relative.parent ?: Paths.get(""))
             destDir.createDirectories()
             val dest = destDir.resolve("${sourcePath.nameWithoutExtension}.kt")
 
-            val ktText = elementResult.text
             if (ktText.isNotBlank()) {
                 dest.writeText(ktText)
                 converted++
