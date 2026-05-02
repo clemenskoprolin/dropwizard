@@ -18,23 +18,25 @@ name: J2K Evaluation
     paths:
       - '.github/workflows/j2k-evaluate.yml'
       - 'tools/j2k-evaluator/**'
+      - 'tools/headless-j2k-runner/**'
       - 'benchmarks/**'
       - 'docs/**'
   pull_request:
     paths:
       - '.github/workflows/j2k-evaluate.yml'
       - 'tools/j2k-evaluator/**'
+      - 'tools/headless-j2k-runner/**'
       - 'benchmarks/**'
       - 'docs/**'
 
 env:
-  KOTLIN_VERSION: '2.1.20'
   J2K_JAR: tools/j2k-evaluator/target/j2k-evaluator.jar
+  HEADLESS_RUNNER_DIR: tools/headless-j2k-runner
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -47,28 +49,17 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Download kotlinc and locate j2k binary
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Build headless J2K runner plugin
         run: |
-          KT_BASE="https://github.com/JetBrains/kotlin/releases/download"
-          DOWNLOAD_URL="${KT_BASE}/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip"
-          echo "Downloading kotlinc ${KOTLIN_VERSION}"
-          curl -fsSL "$DOWNLOAD_URL" -o /tmp/kotlinc.zip
-          unzip -q /tmp/kotlinc.zip -d /tmp/kotlinc-dist
-
-          KOTLINC_BIN="$(find /tmp/kotlinc-dist -type f -name 'kotlinc' \
-            | head -1 | xargs dirname)"
-          echo "$KOTLINC_BIN" >> "$GITHUB_PATH"
-
-          J2K_BIN="${KOTLINC_BIN}/j2k"
-          if [ -f "$J2K_BIN" ]; then
-            chmod +x "$J2K_BIN"
-            echo "J2K_BIN=${J2K_BIN}" >> "$GITHUB_ENV"
-            echo "j2k binary found at ${J2K_BIN}"
-          else
-            echo "::warning::j2k binary not found at ${J2K_BIN};" \
-              "conversion will run in stub mode"
-            echo "J2K_BIN=" >> "$GITHUB_ENV"
-          fi
+          cd "${HEADLESS_RUNNER_DIR}"
+          chmod +x gradlew
+          ./gradlew buildPlugin --no-daemon
+          echo "Headless J2K runner plugin built successfully"
 
       # Install all modules to the local Maven cache first so that inter-module
       # SNAPSHOT deps are resolvable by dependency:build-classpath below.
@@ -85,7 +76,7 @@ jobs:
           OUT="${GITHUB_WORKSPACE}/dropwizard-example/target/classpath.txt"
           ./mvnw -pl dropwizard-example dependency:build-classpath \
             -Dmdep.outputFile="${OUT}" -q
-          echo "EXAMPLE_CLASSPATH=$(cat "${OUT}")" >> "$GITHUB_ENV"
+          echo "EXAMPLE_CLASSPATH_FILE=${OUT}" >> "$GITHUB_ENV"
 
       - name: Build j2k-evaluator tool
         run: ./mvnw -f tools/j2k-evaluator/pom.xml package -q
@@ -95,8 +86,8 @@ jobs:
           java -jar "${J2K_JAR}" convert-primary \
             --source dropwizard-example/src \
             --output artifacts/converted/dropwizard-example \
-            --j2k-bin "${J2K_BIN}" \
-            --classpath "${EXAMPLE_CLASSPATH}"
+            --headless-runner-dir "${HEADLESS_RUNNER_DIR}" \
+            --classpath-file "${EXAMPLE_CLASSPATH_FILE}"
 
       - name: Evaluate converted primary sources
         run: |
@@ -109,7 +100,7 @@ jobs:
         if: ${{ inputs.runSecondaryBenchmark != false }}
         run: |
           java -jar "${J2K_JAR}" compare-petclinic \
-            --j2k-bin "${J2K_BIN}" \
+            --headless-runner-dir "${HEADLESS_RUNNER_DIR}" \
             --output artifacts/reports
 
       - name: Run edge-case dataset
@@ -117,8 +108,18 @@ jobs:
         run: |
           java -jar "${J2K_JAR}" run-edge-cases \
             --dataset benchmarks/edge-cases \
-            --j2k-bin "${J2K_BIN}" \
+            --headless-runner-dir "${HEADLESS_RUNNER_DIR}" \
             --output artifacts/reports
+
+      - name: Verify no stub output
+        run: |
+          STUBS=$(grep -rl "^// STUB" artifacts/converted/ 2>/dev/null | wc -l)
+          if [ "$STUBS" -gt 0 ]; then
+            echo "::error::Found $STUBS stub .kt file(s) — real conversion must have run"
+            grep -rl "^// STUB" artifacts/converted/
+            exit 1
+          fi
+          echo "Stub check passed (0 stub files)"
 
       - name: Upload evaluation artifacts
         if: always()
@@ -131,8 +132,7 @@ jobs:
       - name: Write step summary
         if: always()
         run: |
-          RUN_HDR="## J2K Evaluation — run \`${{ github.run_id }}\`"
-          echo "${RUN_HDR} (kotlinc ${KOTLIN_VERSION})" \
+          echo "## J2K Evaluation — run \`${{ github.run_id }}\` (headless-j2k)" \
             >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 

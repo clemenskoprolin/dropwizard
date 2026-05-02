@@ -3,6 +3,7 @@ package j2k.evaluator
 import kotlin.system.exitProcess
 
 const val KOTLINC_VERSION = "2.1.20"
+const val HEADLESS_RUNNER_VARIANT = "headless-j2k"
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
@@ -62,12 +63,17 @@ private fun printHelp() {
           run-edge-cases     Custom edge-case dataset pass/fail report
 
         Common options:
-          --j2k-bin <path>     Absolute path to the j2k binary (empty = stub mode)
-          --output <dir>       Output directory for reports and converted sources
+          --j2k-bin <path>           Absolute path to the kotlinc j2k binary
+          --headless-runner-dir <dir> Path to tools/headless-j2k-runner (preferred)
+          --output <dir>             Output directory for reports and converted sources
+
+          At least one of --j2k-bin or --headless-runner-dir must be supplied.
+          --headless-runner-dir takes precedence when both are given.
 
         convert-primary options:
           --source <dir>       dropwizard-example/src root
-          --classpath <cp>     Colon-separated classpath passed to j2k
+          --classpath <cp>     Colon-separated classpath (used with --j2k-bin)
+          --classpath-file <f> File containing Maven classpath (used with --headless-runner-dir)
 
         evaluate-primary options:
           --source <dir>       Original Java source root (dropwizard-example/src)

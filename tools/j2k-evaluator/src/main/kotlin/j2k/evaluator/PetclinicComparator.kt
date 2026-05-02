@@ -14,15 +14,20 @@ class PetclinicComparator(private val opts: Map<String, String>) {
     }
 
     fun run() {
-        val j2kBin    = opts.opt("j2k-bin")
-        val outputDir = Paths.get(opts.require("output"))
+        val j2kBin            = opts.opt("j2k-bin")
+        val headlessRunnerDir = opts.opt("headless-runner-dir")
+        val outputDir         = Paths.get(opts.require("output"))
         outputDir.createDirectories()
+
+        check(headlessRunnerDir.isNotBlank() || j2kBin.isNotBlank()) {
+            "compare-petclinic requires --headless-runner-dir or --j2k-bin; neither was supplied."
+        }
 
         val workDir = Files.createTempDirectory("petclinic-work")
         try {
-            val javaRepoDir    = workDir.resolve("java")
-            val kotlinRepoDir  = workDir.resolve("kotlin")
-            val convertedDir   = workDir.resolve("converted")
+            val javaRepoDir   = workDir.resolve("java")
+            val kotlinRepoDir = workDir.resolve("kotlin")
+            val convertedDir  = workDir.resolve("converted")
 
             println("Cloning spring-petclinic (Java)…")
             if (!cloneRepo(PETCLINIC_JAVA, javaRepoDir)) {
@@ -41,10 +46,12 @@ class PetclinicComparator(private val opts: Map<String, String>) {
             val javaSrc = javaRepoDir.resolve("src/main/java")
             convertedDir.createDirectories()
 
-            if (j2kBin.isNotBlank()) {
+            if (headlessRunnerDir.isNotBlank()) {
+                convertTreeHeadless(Paths.get(headlessRunnerDir), javaSrc, convertedDir, workDir)
+            } else {
                 val j2kPath = Paths.get(j2kBin)
                 if (j2kPath.exists() && j2kPath.isExecutable()) {
-                    convertTree(j2kPath, javaSrc, convertedDir)
+                    convertTreeJ2k(j2kPath, javaSrc, convertedDir)
                 }
             }
 
@@ -59,7 +66,28 @@ class PetclinicComparator(private val opts: Map<String, String>) {
         }
     }
 
-    private fun convertTree(j2kBin: Path, sourceRoot: Path, outputRoot: Path) {
+    private fun convertTreeHeadless(
+        runnerDir: Path,
+        sourceRoot: Path,
+        outputRoot: Path,
+        tempBase: Path,
+    ) {
+        val reportFile = tempBase.resolve("petclinic-conversion.json")
+        try {
+            PrimaryConverter.runGradleTask(
+                runnerDir     = runnerDir,
+                sourceRoot    = sourceRoot.toAbsolutePath().toString(),
+                outputRoot    = outputRoot.toAbsolutePath().toString(),
+                classpathFile = "",
+                filesPath     = "",
+                reportPath    = reportFile.toAbsolutePath().toString(),
+            )
+        } catch (e: IllegalStateException) {
+            System.err.println("WARNING: headless runner failed during petclinic conversion: ${e.message}")
+        }
+    }
+
+    private fun convertTreeJ2k(j2kBin: Path, sourceRoot: Path, outputRoot: Path) {
         val javaFiles = sourceRoot.toFile().walk()
             .filter { it.isFile && it.extension == "java" }
             .map { it.toPath() }
@@ -94,30 +122,30 @@ class PetclinicComparator(private val opts: Map<String, String>) {
         converted: List<Path>,
         official: List<Path>
     ): PetclinicComparisonResult {
-        val convClasses  = extractClassNames(converted)
-        val offClasses   = extractClassNames(official)
-        val convPkgs     = extractPackages(converted)
-        val offPkgs      = extractPackages(official)
-        val convAnnots   = countAnnotations(converted)
-        val offAnnots    = countAnnotations(official)
+        val convClasses = extractClassNames(converted)
+        val offClasses  = extractClassNames(official)
+        val convPkgs    = extractPackages(converted)
+        val offPkgs     = extractPackages(official)
+        val convAnnots  = countAnnotations(converted)
+        val offAnnots   = countAnnotations(official)
 
-        val matched    = convClasses.intersect(offClasses).size
-        val classPct   = pct(matched, offClasses.size)
-        val pkgPct     = pct(convPkgs.intersect(offPkgs).size, offPkgs.size)
-        val annotPct   = if (offAnnots == 0) 100.0 else pct(minOf(convAnnots, offAnnots), offAnnots)
+        val matched  = convClasses.intersect(offClasses).size
+        val classPct = pct(matched, offClasses.size)
+        val pkgPct   = pct(convPkgs.intersect(offPkgs).size, offPkgs.size)
+        val annotPct = if (offAnnots == 0) 100.0 else pct(minOf(convAnnots, offAnnots), offAnnots)
 
         return PetclinicComparisonResult(
-            variant                = KOTLINC_VERSION,
-            convertedClassCount    = convClasses.size,
-            officialClassCount     = offClasses.size,
-            matchedClassCount      = matched,
-            convertedPackageCount  = convPkgs.size,
-            officialPackageCount   = offPkgs.size,
+            variant                  = KOTLINC_VERSION,
+            convertedClassCount      = convClasses.size,
+            officialClassCount       = offClasses.size,
+            matchedClassCount        = matched,
+            convertedPackageCount    = convPkgs.size,
+            officialPackageCount     = offPkgs.size,
             convertedAnnotationCount = convAnnots,
             officialAnnotationCount  = offAnnots,
-            classNameMatchPct      = classPct,
-            packageMatchPct        = pkgPct,
-            annotationParityPct    = annotPct
+            classNameMatchPct        = classPct,
+            packageMatchPct          = pkgPct,
+            annotationParityPct      = annotPct
         )
     }
 

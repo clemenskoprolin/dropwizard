@@ -9,16 +9,21 @@ import kotlin.io.path.*
 class EdgeCaseRunner(private val opts: Map<String, String>) {
 
     fun run() {
-        val datasetDir = Paths.get(opts.require("dataset"))
-        val j2kBin     = opts.opt("j2k-bin")
-        val outputDir  = Paths.get(opts.require("output"))
+        val datasetDir        = Paths.get(opts.require("dataset"))
+        val j2kBin            = opts.opt("j2k-bin")
+        val headlessRunnerDir = opts.opt("headless-runner-dir")
+        val outputDir         = Paths.get(opts.require("output"))
         outputDir.createDirectories()
 
-        val hypotheses = loadHypotheses(datasetDir.resolve("hypotheses.json"))
-        println("run-edge-cases: ${hypotheses.size} hypotheses loaded (kotlinc $KOTLINC_VERSION)")
+        check(headlessRunnerDir.isNotBlank() || j2kBin.isNotBlank()) {
+            "run-edge-cases requires --headless-runner-dir or --j2k-bin; neither was supplied."
+        }
 
-        val j2kPath = if (j2kBin.isNotBlank()) Paths.get(j2kBin) else null
-        val casesDir = datasetDir.resolve("cases")
+        val hypotheses = loadHypotheses(datasetDir.resolve("hypotheses.json"))
+        println("run-edge-cases: ${hypotheses.size} hypotheses loaded")
+
+        val j2kPath   = if (j2kBin.isNotBlank()) Paths.get(j2kBin) else null
+        val casesDir  = datasetDir.resolve("cases")
 
         val results = hypotheses.map { hyp ->
             val javaFile = casesDir.resolve(hyp.file)
@@ -28,7 +33,13 @@ class EdgeCaseRunner(private val opts: Map<String, String>) {
                     passed = false, failureNote = "source file not found",
                     unsafeCallCount = 0, unsafeCastCount = 0, conversionSucceeded = false)
             }
-            val r = evaluateCase(hyp, javaFile, j2kPath)
+
+            val r = if (headlessRunnerDir.isNotBlank()) {
+                evaluateCaseHeadless(hyp, javaFile, Paths.get(headlessRunnerDir))
+            } else {
+                evaluateCaseJ2k(hyp, javaFile, j2kPath!!)
+            }
+
             val status = if (r.passed) "PASS" else "FAIL"
             println("  [$status] ${hyp.id}: ${hyp.file} — ${r.failureNote.ifBlank { "ok" }}")
             r
@@ -39,52 +50,90 @@ class EdgeCaseRunner(private val opts: Map<String, String>) {
         println("Edge cases: $passed/${results.size} passed")
     }
 
-    private fun evaluateCase(
+    private fun evaluateCaseHeadless(
         hyp: EdgeCaseHypothesis,
         javaFile: Path,
-        j2kBin: Path?
+        runnerDir: Path,
+    ): EdgeCaseResult {
+        val workDir = Files.createTempDirectory("ec-headless-${hyp.id}")
+        return try {
+            val outputDir     = workDir.resolve("output")
+            outputDir.createDirectories()
+            val reportFile    = workDir.resolve("report.json")
+            val filesListFile = workDir.resolve("files.txt")
+            filesListFile.writeText(javaFile.toAbsolutePath().toString())
+
+            var conversionOk = false
+            try {
+                PrimaryConverter.runGradleTask(
+                    runnerDir     = runnerDir,
+                    sourceRoot    = javaFile.parent.toAbsolutePath().toString(),
+                    outputRoot    = outputDir.toAbsolutePath().toString(),
+                    classpathFile = "",
+                    filesPath     = filesListFile.toAbsolutePath().toString(),
+                    reportPath    = reportFile.toAbsolutePath().toString(),
+                )
+                conversionOk = true
+            } catch (_: IllegalStateException) {
+                // runner exited non-zero
+            }
+
+            val ktFile = outputDir.resolve("${javaFile.nameWithoutExtension}.kt")
+            val ktText = if (ktFile.exists()) ktFile.readText() else ""
+
+            buildResult(hyp, ktText, conversionOk)
+        } finally {
+            workDir.toFile().deleteRecursively()
+        }
+    }
+
+    private fun evaluateCaseJ2k(
+        hyp: EdgeCaseHypothesis,
+        javaFile: Path,
+        j2kBin: Path,
     ): EdgeCaseResult {
         val workDir = Files.createTempDirectory("ec-${hyp.id}")
         return try {
             val workFile = workDir.resolve(javaFile.name)
             Files.copy(javaFile, workFile)
 
-            var conversionOk = false
-            var ktText = ""
+            val proc = ProcessBuilder(j2kBin.toString(), workFile.toString())
+                .redirectErrorStream(true)
+                .start()
+            val conversionOk = proc.waitFor(60, TimeUnit.SECONDS) && proc.exitValue() == 0
+            val ktFile = workDir.resolve("${javaFile.nameWithoutExtension}.kt")
+            val ktText = if (ktFile.exists()) ktFile.readText() else ""
 
-            if (j2kBin != null) {
-                val proc = ProcessBuilder(j2kBin.toString(), workFile.toString())
-                    .redirectErrorStream(true)
-                    .start()
-                conversionOk = proc.waitFor(60, TimeUnit.SECONDS) && proc.exitValue() == 0
-                val ktFile = workDir.resolve("${javaFile.nameWithoutExtension}.kt")
-                ktText = if (ktFile.exists()) ktFile.readText() else ""
-            }
-
-            val unsafeCalls = Regex("""!!""").findAll(ktText).count()
-            val unsafeCasts = Regex("""\bas\s+[A-Z][A-Za-z0-9_]*""").findAll(ktText).count()
-            val hasTodo     = Regex("""//\s*(TODO|FIXME)\b""").containsMatchIn(ktText)
-
-            val passed = j2kBin != null
-                && conversionOk
-                && ktText.isNotBlank()
-                && unsafeCalls == 0
-                && !ktText.startsWith("// CONVERSION FAILED")
-
-            val failureNote = buildList {
-                if (j2kBin == null)      add("j2k binary not provided")
-                if (!conversionOk)       add("conversion process failed")
-                if (ktText.isBlank())    add("empty output")
-                if (unsafeCalls > 0)     add("$unsafeCalls unsafe-call(s) (!!) in output")
-                if (unsafeCasts > 0)     add("$unsafeCasts unsafe cast(s) (as T) in output")
-                if (hasTodo)             add("manual cleanup markers present")
-            }.joinToString("; ")
-
-            EdgeCaseResult(hyp.id, hyp.file, hyp.hypothesis, passed, failureNote,
-                unsafeCalls, unsafeCasts, conversionOk)
+            buildResult(hyp, ktText, conversionOk)
         } finally {
             workDir.toFile().deleteRecursively()
         }
+    }
+
+    private fun buildResult(
+        hyp: EdgeCaseHypothesis,
+        ktText: String,
+        conversionOk: Boolean,
+    ): EdgeCaseResult {
+        val unsafeCalls = Regex("""!!""").findAll(ktText).count()
+        val unsafeCasts = Regex("""\bas\s+[A-Z][A-Za-z0-9_]*""").findAll(ktText).count()
+        val hasTodo     = Regex("""//\s*(TODO|FIXME)\b""").containsMatchIn(ktText)
+
+        val passed = conversionOk
+            && ktText.isNotBlank()
+            && unsafeCalls == 0
+            && !ktText.startsWith("// CONVERSION FAILED")
+
+        val failureNote = buildList {
+            if (!conversionOk)    add("conversion process failed")
+            if (ktText.isBlank()) add("empty output")
+            if (unsafeCalls > 0)  add("$unsafeCalls unsafe-call(s) (!!) in output")
+            if (unsafeCasts > 0)  add("$unsafeCasts unsafe cast(s) (as T) in output")
+            if (hasTodo)          add("manual cleanup markers present")
+        }.joinToString("; ")
+
+        return EdgeCaseResult(hyp.id, hyp.file, hyp.hypothesis, passed, failureNote,
+            unsafeCalls, unsafeCasts, conversionOk)
     }
 
     private fun loadHypotheses(file: Path): List<EdgeCaseHypothesis> {
@@ -95,10 +144,10 @@ class EdgeCaseRunner(private val opts: Map<String, String>) {
             .map { m ->
                 val obj = m.value
                 EdgeCaseHypothesis(
-                    id           = jsonStr(obj, "id"),
-                    file         = jsonStr(obj, "file"),
-                    category     = jsonStr(obj, "category"),
-                    hypothesis   = jsonStr(obj, "hypothesis"),
+                    id             = jsonStr(obj, "id"),
+                    file           = jsonStr(obj, "file"),
+                    category       = jsonStr(obj, "category"),
+                    hypothesis     = jsonStr(obj, "hypothesis"),
                     expectedIssues = jsonStrArray(obj, "expectedIssues")
                 )
             }

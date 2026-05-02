@@ -1,0 +1,19 @@
+<idea-plugin>
+    <id>io.dropwizard.j2k.headless-runner</id>
+    <name>Headless J2K Runner</name>
+    <version>1.0.0-SNAPSHOT</version>
+    <vendor>dropwizard j2k evaluation</vendor>
+    <description>
+        ApplicationStarter plugin that runs IntelliJ's Java-to-Kotlin converter (J2K) in
+        headless batch mode. Invoked via the custom Gradle task runJ2kHeadless; not intended
+        for interactive use.
+    </description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <appStarter implementation="j2k.headless.HeadlessJ2kStarter"/>
+    </extensions>
+</idea-plugin>
