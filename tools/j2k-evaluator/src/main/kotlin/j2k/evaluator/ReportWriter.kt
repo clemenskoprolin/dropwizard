@@ -126,7 +126,7 @@ object ReportWriter {
             | Data classes generated | ${r.kotlinHeuristics.dataClassCount} |
             | Objects generated | ${r.kotlinHeuristics.objectCount} |
             $hotspotsSection
-            _Generated at $timestamp_
+            _Generated at ${timestamp}_
         """.trimIndent()
     }
 
@@ -156,7 +156,7 @@ object ReportWriter {
 
     fun writePetclinicSkipped(reason: String, outputDir: Path) {
         outputDir.resolve("petclinic-summary.md").writeText(
-            "## J2K Evaluation — Secondary Benchmark (spring-petclinic)\n\n_Skipped: $reason_\n"
+            "## J2K Evaluation — Secondary Benchmark (spring-petclinic)\n\n_Skipped: ${reason}_\n"
         )
     }
 
@@ -172,7 +172,7 @@ object ReportWriter {
         | Classes / interfaces | ${r.convertedClassCount} | ${r.officialClassCount} | ${"%.1f".format(r.classNameMatchPct)}% |
         | Annotations | ${r.convertedAnnotationCount} | ${r.officialAnnotationCount} | ${"%.1f".format(r.annotationParityPct)}% |
 
-        _Generated at $timestamp_
+        _Generated at ${timestamp}_
     """.trimIndent()
 
     // --- edge cases ---
