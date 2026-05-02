@@ -65,12 +65,17 @@ jobs:
             echo "J2K_BIN=" >> "$GITHUB_ENV"
           fi
 
-      - name: Validate dropwizard-example baseline build
-        run: ./mvnw -pl dropwizard-example -am test -q -Dsurefire.failIfNoSpecifiedTests=false
+      # Install all modules to the local Maven cache first so that inter-module
+      # SNAPSHOT deps are resolvable by dependency:build-classpath below.
+      - name: Install dropwizard-example and its dependencies (skip tests)
+        run: ./mvnw -pl dropwizard-example -am install -DskipTests -q
+
+      - name: Validate dropwizard-example baseline tests
+        run: ./mvnw -pl dropwizard-example test -q -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Prepare dropwizard-example dependency classpath
         run: |
-          ./mvnw -pl dropwizard-example -am dependency:build-classpath \
+          ./mvnw -pl dropwizard-example dependency:build-classpath \
             -Dmdep.outputFile="$GITHUB_WORKSPACE/dropwizard-example/target/classpath.txt" -q
           echo "EXAMPLE_CLASSPATH=$(cat dropwizard-example/target/classpath.txt)" >> "$GITHUB_ENV"
 
