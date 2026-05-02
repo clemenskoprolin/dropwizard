@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
+import org.jetbrains.intellij.platform.gradle.tasks.aware.SplitModeAware.SplitModeTarget
 
 plugins {
     id("org.jetbrains.intellij.platform") version "2.3.0"
@@ -58,10 +59,24 @@ tasks.named("runIde") { enabled = false }
 //     -Pj2k.files=<file>          (optional — path to newline-delimited Java file list)
 //     -Pj2k.report=<file>         (output JSON report path)
 tasks.register<RunIdeTask>("runJ2kHeadless") {
+    dependsOn("prepareSandbox")
+
+    splitMode.set(false)
+    splitModeTarget.set(SplitModeTarget.BACKEND)
+
     jvmArgumentProviders += CommandLineArgumentProvider {
+        val sandboxRoot = layout.buildDirectory
+            .dir("idea-sandbox/IC-$pinnedIdeaVersion")
+            .get()
+            .asFile
+            .absolutePath
+
         listOf(
             "-Djava.awt.headless=true",
             "-Didea.is.internal=true",
+            "-Didea.config.path=$sandboxRoot/config",
+            "-Didea.system.path=$sandboxRoot/system",
+            "-Didea.plugins.path=$sandboxRoot/plugins",
             "-Didea.log.path=${layout.buildDirectory.get().asFile.absolutePath}/j2k-logs",
             "-Didea.skip.indices.initialization=true",
         )

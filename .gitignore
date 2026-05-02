@@ -32,6 +32,9 @@ out/jreleaser/
 # J2K evaluation — generated artifacts (committed reports live in docs/, not here)
 artifacts/converted/
 artifacts/reports/*.json
+tools/headless-j2k-runner/.gradle/
+tools/headless-j2k-runner/.intellijPlatform/
+tools/headless-j2k-runner/build/
 /tmp/petclinic-work*/
 /tmp/j2k-*/
 /tmp/ec-*/

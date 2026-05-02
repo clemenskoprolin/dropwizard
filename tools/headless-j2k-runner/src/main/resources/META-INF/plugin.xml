@@ -14,6 +14,6 @@
     <depends>org.jetbrains.kotlin</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <appStarter implementation="j2k.headless.HeadlessJ2kStarter"/>
+        <appStarter id="j2k-headless" implementation="j2k.headless.HeadlessJ2kStarter"/>
     </extensions>
 </idea-plugin>

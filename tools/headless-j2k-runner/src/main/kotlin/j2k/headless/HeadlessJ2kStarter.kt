@@ -7,6 +7,10 @@ class HeadlessJ2kStarter : ApplicationStarter {
 
     override val commandName: String = "j2k-headless"
 
+    override val requiredModality: Int = ApplicationStarter.NOT_IN_EDT
+
+    override val isHeadless: Boolean = true
+
     override fun main(args: List<String>) {
         // args[0] is the command name itself ("j2k-headless"); drop it before parsing.
         val exitCode = try {

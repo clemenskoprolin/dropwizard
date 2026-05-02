@@ -1,6 +1,8 @@
 package j2k.headless
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.psi.PsiJavaFile
 import org.jetbrains.kotlin.j2k.ConverterSettings
 import org.jetbrains.kotlin.j2k.J2kConverterExtension
 
@@ -29,15 +31,20 @@ class ConversionSmokeTest : BasePlatformTestCase() {
         """.trimIndent()
 
         val psiFile = myFixture.configureByText("Greeter.java", javaSource)
-            as? com.intellij.psi.PsiJavaFile
-            ?: fail("Expected a PsiJavaFile")
+            as PsiJavaFile
 
-        val extension = J2kConverterExtension.extension(useNewJ2k = true)
-        val converter = extension.createConverter(ConverterSettings.defaultSettings, project, module)
-        val result    = converter.filesToKotlin(listOf(psiFile), extension.createPostProcessor(formatCode = false))
+        val extension = J2kConverterExtension.extension(J2kConverterExtension.Kind.K1_NEW)
+        val converter = extension.createJavaToKotlinConverter(project, module, ConverterSettings.defaultSettings)
+        val result = converter.filesToKotlin(
+            listOf(psiFile),
+            extension.createPostProcessor(formatCode = false),
+            EmptyProgressIndicator(),
+            emptyList(),
+            emptyList(),
+        )
 
-        val ktText = result.results.firstOrNull()?.text
-            ?: fail("filesToKotlin returned no results")
+        val ktText = result.results.firstOrNull() as? String
+            ?: error("filesToKotlin returned no results")
 
         assertFalse("Converted text must be non-empty", ktText.isBlank())
         assertTrue(
@@ -53,14 +60,19 @@ class ConversionSmokeTest : BasePlatformTestCase() {
     fun `test does not produce stub output`() {
         val javaSource = "public class Empty {}"
         val psiFile = myFixture.configureByText("Empty.java", javaSource)
-            as? com.intellij.psi.PsiJavaFile
-            ?: fail("Expected a PsiJavaFile")
+            as PsiJavaFile
 
-        val extension = J2kConverterExtension.extension(useNewJ2k = true)
-        val converter = extension.createConverter(ConverterSettings.defaultSettings, project, module)
-        val result    = converter.filesToKotlin(listOf(psiFile), extension.createPostProcessor(formatCode = false))
+        val extension = J2kConverterExtension.extension(J2kConverterExtension.Kind.K1_NEW)
+        val converter = extension.createJavaToKotlinConverter(project, module, ConverterSettings.defaultSettings)
+        val result = converter.filesToKotlin(
+            listOf(psiFile),
+            extension.createPostProcessor(formatCode = false),
+            EmptyProgressIndicator(),
+            emptyList(),
+            emptyList(),
+        )
 
-        val ktText = result.results.firstOrNull()?.text ?: ""
+        val ktText = result.results.firstOrNull() as? String ?: ""
         assertFalse("Output must not be a stub", ktText.startsWith("// STUB"))
     }
 }
